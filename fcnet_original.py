@@ -1,5 +1,5 @@
-# transformer_regressor.py
-# Transformer-based neural network for regression and
+# fcnet_original.py
+# MLP-style model for continuous outputs, without embeddings returned
 
 # import standard libraries
 import string
@@ -72,7 +72,7 @@ class MultiLayerPerceptron(nn.Module):
 
 class Format():
 
-	def __init__(self, file, training=True):
+	def __init__(self, file, training=True, n_per_field=False):
 
 		df = pd.read_csv(file)	
 		df = df.applymap(lambda x: '' if str(x).lower() == 'nan' else x)
@@ -88,6 +88,11 @@ class Format():
 							'Estimated Transit Time',
 							'Linear Estimation']
 
+		if n_per_field:
+			taken_ls = [4 for i in self.input_fields]
+		else:
+			taken_ls = [4, 1, 8, 5, 3, 3, 3, 4, 4]
+			
 		if training:
 			df = shuffle(df)
 			df.reset_index(inplace=True)
@@ -122,10 +127,7 @@ class Format():
 			array: string: str of values in the row of interest
 
 		"""
-
-
-		taken_ls = [4, 1, 8, 5, 3, 3, 3, 4, 4]
-
+		taken_ls = self.taken_ls
 		string_arr = []
 		if training:
 			inputs = self.training_inputs.iloc[index]

@@ -2,6 +2,7 @@
 
 # import standard libraries
 import random
+import string
 
 # import third-party libraries
 import torch
@@ -17,6 +18,8 @@ class Format:
 		df = df.applymap(lambda x: '' if str(x).lower()[0] == 'n' else x)
 		df = df[:][:10000]
 		self.prediction_feature = prediction_feature
+		self.places_dict = self._init_places_dict()
+		self.embedding_dim = len(self.places_dict) 
 
 		# 80/20 training/test split and formatting
 		length = len(df[:])
@@ -34,10 +37,29 @@ class Format:
 		self.val_outputs.reset_index(inplace=True, drop=True)
 
 
+	def _init_places_dict(self, ints_only=True):
+		"""
+		Initialize the dictionary storing character to embedding dim tensor map.
+
+		kwargs:
+			ints_only: bool, if True then a numerical input is expected.
+
+		returns:
+			places_dict: dictionary
+		"""
+		if ints_only:
+			places_dict = {s:i for i, s in enumerate('0123456789. -:_')}
+		else:
+			chars = string.printable
+			places_dict = {s:i for i, s in enumerate(chars)}
+
+		return places_dict
+
+
 	def stringify_input(self, input_type='training', short=True, n_taken=4, remove_spaces=True):
 		"""
 		Compose array of string versions of relevant information in self.df 
-		Maintains a consistant structure to inputs regardless of missing values.
+		Maintains a consistant structure to inputs regardless of missing values, with n_taken characters per field.
 
 		kwargs:
 			input_type: str, type of data input requested ('training' or 'test' or 'validation')
@@ -71,24 +93,24 @@ class Format:
 		return string_arr
 
 
-	@classmethod
-	def string_to_tensor(self, string, flatten):
+	def string_to_tensor(self, string, flatten, ints_only=True):
 		"""
 		Convert a string into a tensor
 
 		Args:
 			string: arr[str]
 			flatten: bool, if True then tensor has dim [1 x length]
+		kwargs:
+			ints_only: bool, if True then the input is expected to be mainly numerical
 
 		Returns:
 			tensor: torch.Tensor
 
 		"""
-
-		places_dict = {s:i for i, s in enumerate('0123456789. -:_')}
+		places_dict = self.places_dict
 
 		# vocab_size x embedding dimension (ie input length)
-		tensor_shape = (len(string) , len(places_dict)) 
+		tensor_shape = (len(string), len(places_dict)) 
 		tensor = torch.zeros(tensor_shape)
 
 		for i, letter in enumerate(string):
@@ -122,7 +144,7 @@ class Format:
 				string = string_arr[i]
 				input_arr.append(self.string_to_tensor(string, flatten))
 				output_arr.append(torch.tensor(outputs[self.prediction_feature][i]))
-
+		
 		return input_arr, output_arr
 
 

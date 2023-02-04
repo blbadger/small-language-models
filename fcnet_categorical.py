@@ -1,5 +1,5 @@
-# transformer_regressor.py
-# Transformer-based neural network for regression and
+# fcnet_categorical.py
+# MLP-style model for categorical outputs
 
 # import standard libraries
 import string
@@ -20,7 +20,6 @@ import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from network_interpret import CategoricalStaticInterpret as interpret
-
 
 # turn 'value set on df slice copy' warnings off
 pd.options.mode.chained_assignment = None
@@ -74,22 +73,27 @@ class MultiLayerPerceptron(nn.Module):
 
 class Format():
 
-	def __init__(self, file, training=True):
+	def __init__(self, file, training=True, n_per_field=False):
 
 		df = pd.read_csv(file)	
 		df = df.applymap(lambda x: '' if str(x).lower() == 'nan' else x)
 		df = df[:10000]
 		length = len(df[:])
-		self.input_fields = ['PassengerId','Pclass','Name','Sex','Age','SibSp','Parch','Ticket','Fare','Cabin','Embarked']
-		# self.input_fields = ['Store Number', 
-		# 					'Market', 
-		# 					'Order Made',
-		# 					'Cost',
-		# 					'Total Deliverers', 
-		# 					'Busy Deliverers', 
-		# 					'Total Orders',
-		# 					'Estimated Transit Time',
-		# 					'Linear Estimation']
+		self.input_fields = ['PassengerId',
+							 'Pclass',
+							 'Name',
+							 'Sex',
+							 'Age',
+							 'SibSp',
+							 'Parch',
+							 'Ticket',
+							 'Fare',
+							 'Cabin',
+							 'Embarked']
+		if n_per_field:
+			self.taken_ls = [4 for i in self.input_fields]
+		else:
+			self.taken_ls = [3, 1, 5, 2, 3, 2, 4, 5, 4, 4, 1]
 
 		if training:
 			df = shuffle(df)
@@ -159,10 +163,7 @@ class Format():
 			array: string: str of values in the row of interest
 
 		"""
-
-
-		taken_ls = [3, 1, 5, 2, 3, 2, 4, 5, 4, 4, 1]
-		# taken_ls = [4, 1, 8, 5, 3, 3, 3, 4, 4]
+		taken_ls = self.taken_ls
 
 		string_arr = []
 		if training:
@@ -184,7 +185,7 @@ class Format():
 	@classmethod
 	def string_to_tensor(self, input_string, ints_only=False):
 		"""
-		Convert a string into a tensor
+		Convert a string into a tensor. For numerical inputs.
 
 		Args:
 			string: str, input as a string
@@ -204,6 +205,7 @@ class Format():
 		else:
 			chars = string.printable
 			places_dict = {s:i for i, s in enumerate(chars)}
+		self.embedding_dim = len(places_dict)
 		# vocab_size x batch_size x embedding dimension (ie input length)
 		tensor_shape = (len(input_string), 1, len(places_dict)) 
 		tensor = torch.zeros(tensor_shape)

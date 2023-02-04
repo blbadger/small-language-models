@@ -1,4 +1,6 @@
 # fcnet.py
+# MLP-stype model for continuous outputs
+
 # import standard libraries
 import string
 import time
@@ -73,12 +75,13 @@ class MultiLayerPerceptron(nn.Module):
 		em6 = out
 
 		output = self.hidden2output(out)
+		# remove embeddings for better performance
 		return output, em1, em2, em3, em4, em5, em6
 
 
 class Format:
 
-	def __init__(self, file, training=True):
+	def __init__(self, file, training=True, n_per_field=False):
 
 		df = pd.read_csv(file)	
 		# df.dropna(subset=['positive_control'], inplace=True)
@@ -94,6 +97,11 @@ class Format:
 							'Total Orders',
 							'Estimated Transit Time',
 							'Linear Estimation']
+
+		if n_per_field:
+			self.taken_ls = [4 for i in self.input_fields] # somewhat arbitrary size per field
+		else:
+			self.taken_ls = [4, 1, 8, 5, 3, 3, 3, 4, 4]
 
 		if training:
 			# df = shuffle(df)
@@ -128,9 +136,7 @@ class Format:
 			array: string: str of values in the row of interest
 
 		"""
-		
-		taken_ls = [4, 1, 8, 5, 3, 3, 3, 4, 4]
-
+		taken_ls = self.taken_ls
 		string_arr = []
 		if training:
 			inputs = self.training_inputs.iloc[index]

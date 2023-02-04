@@ -1,4 +1,5 @@
-# transformer.py
+# transformer_categorical.py
+# Transformer encoder model for categorical outputs
 
 # import standard libraries
 import string
@@ -147,7 +148,7 @@ class Format():
 	def unstructured_stringify(self, index, training=True):
 		pass
 
-	def stringify_input(self, index, training=True):
+	def stringify_input(self, index, training=True, n_per_field=False):
 		"""
 		Compose array of string versions of relevant information in self.df 
 		Maintains a consistant structure to inputs regardless of missing values.
@@ -160,8 +161,10 @@ class Format():
 
 		"""
 
-
-		taken_ls = [3, 1, 5, 2, 3, 2, 4, 5, 4, 4, 1] # not tuned for Titanic, a first guess
+		if n_per_field:
+			taken_ls = [4 for i in self.input_fields] # arbitrary number
+		else:
+			taken_ls = [3, 1, 5, 2, 3, 2, 4, 5, 4, 4, 1] # not tuned for Titanic, a first guess
 
 		string_arr = []
 		if training:
@@ -203,6 +206,7 @@ class Format():
 		else:
 			chars = string.printable
 			places_dict = {s:i for i, s in enumerate(chars)}
+
 		# vocab_size x batch_size x embedding dimension (ie input length)
 		tensor_shape = (len(input_string), 1, len(places_dict)) 
 		tensor = torch.zeros(tensor_shape)
@@ -231,7 +235,14 @@ class Format():
 
 	def sequential_tensors(self, training=True):
 		"""
-		
+		Sample the input sequentially
+
+		kwargs:
+			training: bool, if true then accesses training data
+
+		returns:
+			input_tensors: arr[torch.tensor]
+			output_tensors: arr[torch.tensor]
 		"""
 
 		input_tensors = []

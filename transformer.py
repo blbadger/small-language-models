@@ -1,4 +1,5 @@
 # transformer.py
+# Transformer encoder architecture for continuous outputs
 
 # import standard libraries
 import string
@@ -117,12 +118,13 @@ class PositionalEncoding(nn.Module):
 class ActivateNetwork:
 
 	def __init__(self):
-		embedding_dim = len('0123456789. -:_')
+		
 		file = 'data/linear_historical.csv'
 		input_tensors = Format(file, 'positive_control')
-
+		# inputs are transformed to tensors using
 		self.train_inputs, self.train_outputs = input_tensors.transform_to_tensors(training=True, flatten=False)
 		self.test_inputs, self.test_outputs = input_tensors.transform_to_tensors(training=False, flatten=False)
+		embedding_dim = input_tensors.embedding_dim
 		self.line_length = len(self.train_inputs[0])
 		self.minibatch_size = 128
 		self.model = self.init_transformer(embedding_dim, self.minibatch_size, self.line_length).to(device)
@@ -476,7 +478,7 @@ net.plot_predictions(0)
 net.plot_embedding()
 
 def check_order():
-	input = '_1.0_2015_1845_3441_33.0_14.0_21.0_861._3218_3779_481._85.7'
+	input = '_1.0_2015_1845_3441_33.0_14.0_21.0_861._3218_3779_481._85.7' # an actual input
 	input_arr = [i for i in input]
 	model_outputs = []
 	for i in range(200):
