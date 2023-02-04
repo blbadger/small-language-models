@@ -6,7 +6,7 @@ Code for the paper 'Small Language Models for Tabular Data', which may be access
 
 ### General Details
 
-This repository provides code for the modeling of arbitrary tabular datasets (assuming ASCII character encodings that is) via deep learning, an approach that seems to be remarkably effective even for poorly composed datasets.  The paper linked above provides one particular example of this, in which a small model with no data formatting, normalization, or cleaning is capable of achieving record Titanic challenge accuracy and performs better than ensemble approaches using carefully curated classical ML models.  This phenomenon has been observed to extend to a variety of private datasets in the author's experience, although some formatting is necessary for very large numerical inputs.
+This repository provides code for the modeling of arbitrary tabular datasets (assuming ASCII character encodings that is) via deep learning.  The paper linked above provides one particular example of the remarkable efficacy of this approach, in which a small model with no data formatting, normalization, or cleaning is capable of achieving record Titanic challenge accuracy and performs better than ensemble approaches of carefully curated classical ML models.  
 
 Note that this is research code and is not currently productionized.  In particular, there are non-optimal approaches taken in the data encoding steps (for example, the `data_formatter.Format` class iterates through all specified rows of the tabular data in question sequentially) that make this code somewhat slow for large tables.  This will hopefully be amended in the near future to allow for fast encoding of as large a dataset as can fit in memory.
 
