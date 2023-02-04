@@ -2,6 +2,8 @@
 
 Code for the paper 'Small Language Models for Tabular Data', which may be accessed on [arxiv](https://arxiv.org/abs/2211.02941).
 
+![cover photo](data/small_language_model_cover.png)
+
 ### General Details
 
 Note firstly that this is research code and is not productionized as-is.  In particular, there are non-optimal approaches taken in the data encoding steps (for example, the `data_formatter.Format` class iterates through all specified rows of the tabular data in question sequentially).
