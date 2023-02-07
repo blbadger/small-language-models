@@ -125,13 +125,14 @@ class ActivateNetwork:
 		self.train_inputs, self.train_outputs = input_tensors.transform_to_tensors(training=True, flatten=False)
 		self.test_inputs, self.test_outputs = input_tensors.transform_to_tensors(training=False, flatten=False)
 		embedding_dim = input_tensors.embedding_dim
+		self.embedding_dim = embedding_dim
 		self.line_length = len(self.train_inputs[0])
 		self.minibatch_size = 128
 		self.model = self.init_transformer(embedding_dim, self.minibatch_size, self.line_length).to(device)
 		self.count_parameters()
 		self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
 		self.loss_function = nn.L1Loss()
-		self.epochs = 200
+		self.epochs = 2
 
 	def init_transformer(self, embedding_dim, minibatch_size, line_length):
 		"""
@@ -347,6 +348,7 @@ class ActivateNetwork:
 			print (f'Epoch {epoch} complete: {total_loss} loss')
 		return
 
+	@torch.no_grad()
 	def plot_embedding(self, index=0):
 		"""
 		Generates a scatterplot of all pairs of embeddings versus the input
@@ -363,7 +365,7 @@ class ActivateNetwork:
 		number_of_examples = 200
 		actual_arr, embedding_arr, input_arr = [], [], []
 		for i in range(number_of_examples):
-			input_tensor = self.test_inputs[i].reshape(1, 59, 15).to(device)
+			input_tensor = torch.unsqueeze(self.test_inputs[i], 0).to(device)
 			output_tensor = self.test_outputs[i].to(device)
 			model_output, embedding = self.model(input_tensor)[0], self.model(input_tensor)[1]
 			actual_arr.append(float(output_tensor))
@@ -406,44 +408,37 @@ class ActivateNetwork:
 		torch.save(model.state_dict(), file_name)
 		return
 
-
-	def evaluate_network(self, model, validation_inputs, validation_outputs):
+	@torch.no_grad()
+	def evaluate_network(self):
 		"""
 		Evaluate network on validation data.
 
 		Args:
-			model: Transformer class object
-			validation_inputs: arr[torch.Tensor]
-			validation_outputs: arr[torch.Tensor]
+			None
 
 		Returns:
-			None (prints validation accuracies)
+			None (prints accuracies)
 
 		"""
-
+		model = self.model
 		model.eval() # switch to evaluation mode (silence dropouts etc.)
 		count = 0
-		validation_data = Format(file, 'positive_control')
+		validation_inputs = self.test_inputs
+		validation_outputs = self.test_outputs
 
-		with torch.no_grad():
-			total_error = 0
-			mae_error = 0
-			weighted_mae = 0
-			for i in range(len(validation_inputs)): 
-				model_output = model(validation_inputs[i])
-				total_error += (float(model_output) - float(output_tensor))**2
-				mae_error += abs(float(model_output) - float(output_tensor))
-				count += 1
+		squared_error = 0
+		mae_error = 0
+		for i in range(len(validation_inputs)//self.minibatch_size): 
+			input_batch = torch.stack(validation_inputs[i:i + self.minibatch_size]).to(device)
+			output_batch = torch.stack(validation_outputs[i:i + self.minibatch_size]).to(device)
+			model_output, *_ = model(input_batch)
+			squared_error += torch.sum((model_output - output_batch)**2).item()
+			mae_error += torch.sum(torch.abs(model_output - output_batch)).item()
+			count += 1
 
-				if float(model_output) < float(output_tensor):
-					weighted_mae += 2*abs(float(model_output) - float(output_tensor))
-				else:
-					weighted_mae += abs(float(model_output) - float(output_tensor))
-
-		rms_error = (total_error / count) ** 0.5
+		rms_error = (squared_error / count) ** 0.5
 		print ('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 		print (f'Validation RMS error: {round(rms_error, 2)} \n')
-		print (f'Validation Weighted MAE: {weighted_mae / count}')
 		print (f'Validation Mean Absolute Error: {mae_error / count}')
 
 		return
@@ -471,12 +466,6 @@ def init_transformer(embedding_dim, minibatch_size, line_length):
 	return model
 
 
-net = ActivateNetwork()
-net.train_model()
-net.plot_predictions(0)
-# net.evaluate_network()
-net.plot_embedding()
-
 def check_order():
 	input = '_1.0_2015_1845_3441_33.0_14.0_21.0_861._3218_3779_481._85.7' # an actual input
 	input_arr = [i for i in input]
@@ -490,3 +479,9 @@ def check_order():
 
 	print (model_outputs)
 
+if __name__ == '__main__':
+	net = ActivateNetwork()
+	net.train_model()
+	net.plot_predictions(0)
+	net.evaluate_network()
+	net.plot_embedding()

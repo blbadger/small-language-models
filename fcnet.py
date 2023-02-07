@@ -22,6 +22,8 @@ import plotly.express as px
 
 # import local libraries
 from network_interpret import StaticInterpret
+from data_formatter import FormatDeliveries as Format
+from data_formatter import Format as GeneralFormat
 
 # turn 'value set on df slice copy' warnings off
 pd.options.mode.chained_assignment = None
@@ -30,7 +32,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class MultiLayerPerceptron(nn.Module):
 
-	def __init__(self, input_size, output_size):
+	def __init__(self, input_size, output_size, return_embeddings=True):
 
 		super().__init__()
 		self.input_size = input_size
@@ -43,6 +45,7 @@ class MultiLayerPerceptron(nn.Module):
 		self.hidden2output = nn.Linear(hidden3_size, output_size)
 		self.relu = nn.ReLU()
 		self.dropout = nn.Dropout(0.)
+		self.return_embeddings = return_embeddings
 
 	def forward(self, input):
 		"""
@@ -75,192 +78,40 @@ class MultiLayerPerceptron(nn.Module):
 		em6 = out
 
 		output = self.hidden2output(out)
-		# remove embeddings for better performance
-		return output, em1, em2, em3, em4, em5, em6
 
-
-class Format:
-
-	def __init__(self, file, training=True, n_per_field=False):
-
-		df = pd.read_csv(file)	
-		# df.dropna(subset=['positive_control'], inplace=True)
-		df = df.applymap(lambda x: '' if str(x).lower() == 'nan' else x)
-		df = df[:10000]
-		length = len(df['Elapsed Time'])
-		self.input_fields = ['Store Number', 
-							'Market', 
-							'Order Made',
-							'Cost',
-							'Total Deliverers', 
-							'Busy Deliverers', 
-							'Total Orders',
-							'Estimated Transit Time',
-							'Linear Estimation']
-
-		if n_per_field:
-			self.taken_ls = [4 for i in self.input_fields] # somewhat arbitrary size per field
+		# returns embeddings, but with performance cost
+		if self.return_embeddings:
+			return output, em1, em2, em3, em4, em5, em6
 		else:
-			self.taken_ls = [4, 1, 8, 5, 3, 3, 3, 4, 4]
-
-		if training:
-			# df = shuffle(df)
-			df.reset_index(inplace=True)
- 
-			# 80/20 training/validation split
-			split_i = int(length * 0.8)
-
-			training = df[:][:split_i]
-			self.training_inputs = training[self.input_fields]
-			self.training_outputs = [i for i in training['positive_three'][:]]
-
-			validation_size = length - split_i
-			validation = df[:][split_i:split_i + validation_size]
-			self.validation_inputs = validation[self.input_fields]
-			self.validation_outputs = [i for i in validation['positive_three'][:]]
-			self.validation_inputs = self.validation_inputs.reset_index()
-
-		else:
-			self.training_inputs = self.df # not actually training, but matches name for stringify
+			return output
 
 
-	def stringify_input(self, index, training=True):
-		"""
-		Compose array of string versions of relevant information in self.df 
-		Maintains a consistent structure to inputs regardless of missing values.
-
-		Args:
-			index: int, position of input n 
-
-		Returns:
-			array: string: str of values in the row of interest
-
-		"""
-		taken_ls = self.taken_ls
-		string_arr = []
-		if training:
-			inputs = self.training_inputs.iloc[index]
-		else:
-			inputs = self.validation_inputs.iloc[index]
-
-		fields_ls = self.input_fields
-		for i, field in enumerate(fields_ls):
-			entry = str(inputs[field])[:taken_ls[i]]
-			while len(entry) < taken_ls[i]:
-				entry += '_'
-			string_arr.append(entry)
-
-		string = ''.join(string_arr)
-		return string
-
-	def unstructured_stringify(self, index, training=True, pad=True, length=50):
-		"""
-		Compose array of string versions of relevant information in self.df 
-		Does not maintain a consistant structure to inputs regardless of missing 
-		values.
-
-		Args:
-			index: int, position of input
-
-		Returns:
-			array: string: str of values in the row of interest
-
-		"""
-
-		string_arr = []
-		if training:
-			inputs = self.training_inputs.iloc[index]
-		else:
-			inputs = self.validation_inputs.iloc[index]
-
-		fields_ls = self.input_fields
-		for i, field in enumerate(fields_ls):
-			entry = str(inputs[field])
-			string_arr.append(entry)
-
-
-		string = ''.join(string_arr)
-		if pad:
-			if len(string) < length:
-				string += '_' * (length - len(string))
-			if len(string) > length:
-				string = string[:length]
-
-		return string
-
-
-	@classmethod
-	def string_to_tensor(self, input_string):
-		"""
-		Convert a string into a tensor
-
-		Args:
-			string: str, input as a string
-
-		Returns:
-			tensor: torch.Tensor() object
-		"""
-
-		places_dict = {s:int(s) for s in '0123456789'}
-		for i, char in enumerate('. -:_'):
-			places_dict[char] = i + 10
-
-		# vocab_size x batch_size x embedding dimension (ie input length)
-		tensor_shape = (len(input_string), 1, 15) 
-		tensor = torch.zeros(tensor_shape)
-
-		for i, letter in enumerate(input_string):
-			tensor[i][0][places_dict[letter]] = 1.
-
-		tensor = tensor.flatten()
-		return tensor 
-
-
-	def sequential_tensors(self, training=True):
-		"""
-		kwargs:
-			training: bool
-
-		Returns:
-			input_tensors: torch.Tensor objects
-			output_tensors: torch.Tensor objects
-		"""
-
-		input_tensors = []
-		output_tensors = []
-		if training:
-			inputs = self.training_inputs
-			outputs = self.training_outputs
-		else:
-			inputs = self.validation_inputs
-			outputs = self.validation_outputs
-
-		for i in range(len(inputs)):
-			input_string = self.stringify_input(i, training=training)
-			input_tensor = self.string_to_tensor(input_string)
-			input_tensors.append(input_tensor)
-
-			# convert output float to tensor directly
-			output_tensors.append(torch.Tensor([outputs[i]]))
-
-		return input_tensors, output_tensors
-
- 
 class ActivateNet:
 
-	def __init__(self, epochs):
-		n_letters = len('0123456789. -:_') # 15 possible characters
+	def __init__(self, prediction_feature, epochs, ints_only=True):
+
+		# specify training and test data
 		file = 'data/linear_historical.csv'
-		form = Format(file, training=True)
-		self.input_tensors, self.output_tensors = form.sequential_tensors(training=True)
-		self.validation_inputs, self.validation_outputs = form.sequential_tensors(training=False)
+		if ints_only:
+			n_letters = len('0123456789. -:_') # 15 possible characters
+			form = Format(file, prediction_feature, training=True)
+			self.input_tensors, self.output_tensors = form.sequential_tensors(training=True)
+			self.validation_inputs, self.validation_outputs = form.sequential_tensors(training=False)
+		else:
+			n_letters = len(string.printable)
+			form = GeneralFormat(file, prediction_feature, ints_only=False)
+			self.input_tensors, self.output_tensors = form.transform_to_tensors(training=True)
+			self.validation_inputs, self.validation_outputs = form.transform_to_tensors(training=False)
+
+
 		self.epochs = epochs
 
 		output_size = 1
 		input_size = len(self.input_tensors[0])
-		self.model = MultiLayerPerceptron(input_size, output_size).to(device)
+		self.model = MultiLayerPerceptron(input_size, output_size, return_embeddings=True).to(device)
 		self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
 		self.biases_arr = [[], [], []] # for plotting bias
+		self.embedding_dim = n_letters
 
 	@staticmethod
 	def count_parameters(model):
@@ -347,7 +198,7 @@ class ActivateNet:
 			loss.item(): float of loss for that minibatch
 
 		"""
-		# self.model.train()
+		self.model.train()
 		output, _, _, _, _, _, _ = self.model(input_tensor)
 		output_tensor = output_tensor.reshape(minibatch_size, 1)
 		loss_function = torch.nn.L1Loss()
@@ -365,6 +216,9 @@ class ActivateNet:
 		"""
 		Plots the model predictions (y-axis) versus the true output (x-axis)
 
+		Args:
+			epoch_number: int, 
+
 		"""
 		self.model.eval() # switch to evaluation mode (silence dropouts etc.)
 		model_outputs, targets, origin_ids = [], [], []
@@ -381,9 +235,12 @@ class ActivateNet:
 
 
 		plt.scatter(targets, model_outputs, c=origin_ids, cmap='hsv', s=1.5)
-		fig = px.scatter(x=targets, y=model_outputs, color=origin_id, hover_data=[origin_id, target_id], color_continuous_scale=["red", "orange","yellow", "green","blue", "purple", "violet"])
+		fig = px.scatter(x=targets, 
+						 y=model_outputs, 
+						 color=origin_ids, 
+						 color_continuous_scale=["red", "orange","yellow", "green","blue", "purple", "violet"])
+
 		fig.update_traces(textposition='top center')
-		# fig.update_layout(title_text='Life Expectency', title_x=0.5)
 		fig.show()
 
 		# _, _, rval, _, _ = scipy.stats.linregress([float(i) for i in self.validation_outputs], model_outputs)
@@ -528,11 +385,13 @@ class ActivateNet:
 			plt.tight_layout()
 			plt.savefig('embedding{0:04d}'.format(k), dpi=350)
 			plt.close()
-			
 
-			fig = px.scatter(x=actual_distances, y=embedding_distances, color=origin_id, hover_data=[origin_id, target_id], color_continuous_scale=["red", "orange","yellow", "green","blue", "purple", "violet"])
+			fig = px.scatter(x=actual_distances, 
+							 y=embedding_distances, 
+							 color=origin_id, 
+							 hover_data=[origin_id, target_id], 
+							 color_continuous_scale=["red", "orange","yellow", "green","blue", "purple", "violet"])
 			fig.update_traces(textposition='top center')
-			# fig.update_layout(title_text='Life Expectency', title_x=0.5)
 			fig.show()
 
 		# plt.scatter(input_distances, embedding_distances, s=0.3)
@@ -587,89 +446,66 @@ class ActivateNet:
 				count += 1
 
 			print (f'Epoch {epoch} complete: {total_loss} loss')
-			# self.test_model()
 
 		return
 
-
-	def test_model(self):
+	@torch.no_grad()
+	def test_model(self, n_taken=2000):
 		"""
 		Test the model using a validation set
 
-		Args:
-			None
+		kwargs:
+			n_taken: int, number of rows used to test model
 
 		Returns:
-			None
+			None (prints test results)
 
 		"""
 
 		self.model.eval() # switch to evaluation mode (silence dropouts etc.)
 		loss = torch.nn.L1Loss()
 
-		with torch.no_grad():
-			total_error = 0
-			for i in range(len(self.validation_inputs)):
-				input_tensor = self.validation_inputs[i].to(device)
-				output_tensor = self.validation_outputs[i].to(device)
-				model_output, _, = self.model(input_tensor)
-				total_error += loss(model_output, output_tensor).item()
+		total_error = 0
+		for i in range(len(self.validation_inputs)):
+			input_tensor = self.validation_inputs[i].to(device)
+			output_tensor = self.validation_outputs[i].to(device)
+			model_output, *_  = self.model(input_tensor)
+			total_error += loss(model_output, output_tensor).item()
 
 		print (f'Test Average Absolute Error: {round(total_error / len(self.validation_inputs), 2)}')
 
-		with torch.no_grad():
-			total_error = 0
-			for i in range(len(self.input_tensors[:2000])):
-				input_tensor = self.input_tensors[i]
-				output_tensor = self.output_tensors[i]
-				model_output, _ = self.model(input_tensor)
-				total_error += loss(model_output, output_tensor).item()
+		total_error = 0
+		for i in range(len(self.input_tensors[:n_taken])):
+			input_tensor = self.input_tensors[i]
+			output_tensor = self.output_tensors[i]
+			model_output, *_ = self.model(input_tensor.to(device))
+			total_error += loss(model_output, output_tensor.to(device)).item()
 
 		print (f'Training Average Absolute Error: {round(total_error / len(self.validation_inputs), 2)}')
 		return
 
 
-	def predict(self, model, test_inputs):
-		"""
-		Make predictions with a model.
+if __name__ == '__main__':
+	network = ActivateNet('positive_three', 200)
+	network.train_model()
+	torch.save(network.model.state_dict(), 'model_weights')
+	network.model.load_state_dict(torch.load('model_weights'))
+	network.test_model()
+	network.plot_embedding()
+	network.plot_predictions(0)
 
-		Args:
-			model: Transformer() object
-			test_inputs: torch.tensor inputs of prediction desired
+	# Note that interpretations are not compatible with embedding information
+	input_tensors, output_tensors = network.validation_inputs, network.validation_outputs
+	model = network.model.to(device)
+	interpret = StaticInterpret(model, input_tensors, output_tensors, network.embedding_dim)
+	interpret.readable_interpretation(0, method='occlusion', aggregation='max')
+	interpret.heatmap(0, method='occlusion')
 
-		Returns:
-			prediction_array: arr[int] of model predictions
+	interpret.readable_interpretation(1, method='gradientxinput', aggregation='max')
+	interpret.heatmap(1, method='gradientxinput')
 
-		"""
-		model.eval()
-		prediction_array = []
-
-		with torch.no_grad():
-			for i in range(len(test_inputs['index'])):
-				prediction_array.append(model_output)
-
-		return prediction_array
-
-
-network = ActivateNet(200)
-network.train_model()
-# torch.save(network.model.state_dict(), 'model_weights')
-# network.model.load_state_dict(torch.load('model_weights'))
-network.test_model()
-# network.plot_embedding()
-# network.plot_predictions(0)
-
-# input_tensors, output_tensors = network.validation_inputs, network.validation_outputs
-# model = network.model.to(device)
-# interpret = StaticInterpret(model, input_tensors, output_tensors)
-# interpret.readable_interpretation(0, method='occlusion', aggregation='max')
-# interpret.heatmap(0, method='occlusion')
-
-# interpret.readable_interpretation(1, method='gradientxinput', aggregation='max')
-# interpret.heatmap(1, method='gradientxinput')
-
-# interpret.readable_interpretation(2, method='combined', aggregation='max')
-# interpret.heatmap(2, method='combined')
+	interpret.readable_interpretation(2, method='combined', aggregation='max')
+	interpret.heatmap(2, method='combined')
 
 
 

@@ -12,7 +12,7 @@ print (device)
 
 class StaticInterpret:
 
-	def __init__(self, model, input_tensors, output_tensors):
+	def __init__(self, model, input_tensors, output_tensors, embedding_dim):
 		self.model = model 
 		self.model.eval()
 		self.output_tensors = output_tensors
@@ -26,7 +26,7 @@ class StaticInterpret:
 						'Total Orders',
 						'Estimated Transit Time',
 						'Linear Estimation']
-		self.embedding_dim = 15
+		self.embedding_dim = embedding_dim
 		# self.taken_ls = [4, 1, 15, 5, 4, 4, 4, 4, 4]
 		self.taken_ls = [4, 1, 8, 5, 3, 3, 3, 4, 4]
 
@@ -46,7 +46,7 @@ class StaticInterpret:
 
 		"""
 		input_tensor = input_tensor.flatten().to(device)
-		output_tensor = self.model(input_tensor)
+		output_tensor, *_ = self.model(input_tensor)
 		zeros_tensor = torch.zeros(input_tensor[:occlusion_size*self.embedding_dim].shape)
 		total_index = 0
 		occlusion_arr = [0 for i in range(sum(self.taken_ls))]
@@ -56,7 +56,7 @@ class StaticInterpret:
 			input_copy = torch.clone(input_tensor)
 			input_copy[i:i + occlusion_size*self.embedding_dim] = zeros_tensor
 
-			output_missing = self.model(input_copy)
+			output_missing, *_ = self.model(input_copy)
 			occlusion_val = abs(float(output_missing) - float(output_tensor))
 
 			for j in range(occlusion_size):
@@ -88,7 +88,7 @@ class StaticInterpret:
 		# enforce the input tensor to be assigned a gradient
 		input_tensor = input_tensor.flatten().to(device)
 		input_tensor.requires_grad = True
-		output = self.model(input_tensor)
+		output, *_ = self.model(input_tensor)
 
 		# only scalars may be assigned a gradient
 		output_shape = 1
@@ -284,6 +284,8 @@ class CategoricalStaticInterpret:
 		self.model.eval()
 		self.output_tensors = output_tensors
 		self.input_tensors = input_tensors
+
+		# matching field_ls and taken_ls from model
 		self.fields_ls = ['PassengerId','Pclass','Name','Sex','Age','SibSp','Parch','Ticket','Fare','Cabin','Embarked']
 		self.taken_ls = [3, 1, 5, 2, 3, 2, 4, 5, 4, 4, 1] 
 		self.embedding_dim = len(string.printable)
