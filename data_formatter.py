@@ -18,11 +18,12 @@ class Format:
 	Not intended for general use.
 	"""
 
-	def __init__(self, file, prediction_feature, ints_only=False):
+	def __init__(self, file, prediction_feature, n_taken=4, ints_only=False):
 
 		df = pd.read_csv(file)	
 		df = df.applymap(lambda x: '' if str(x).lower()[0] == 'n' else x)
-		df = df[:][:10000]
+		df = df[:][:100000]
+		self.n_taken = n_taken
 		self.prediction_feature = prediction_feature
 		self.places_dict = self._init_places_dict(ints_only)
 		self.embedding_dim = len(self.places_dict) 
@@ -33,6 +34,8 @@ class Format:
 		training = df[:][:split_i]
 		self.training_inputs = training[[i for i in training.columns if i != prediction_feature]]
 		self.training_outputs = training[[prediction_feature]]
+		self.training_outputs.reset_index(inplace=True, drop=True)
+		self.training_inputs.reset_index(inplace=True, drop=True)
 
 		validation_size = length - split_i
 		validation = df[:][split_i:split_i + validation_size]
@@ -62,7 +65,7 @@ class Format:
 		return places_dict
 
 
-	def stringify_input(self, input_type='training', short=True, n_taken=4, remove_spaces=True):
+	def stringify_input(self, input_type='training', short=True, remove_spaces=True):
 		"""
 		Compose array of string versions of relevant information in self.df 
 		Maintains a consistant structure to inputs regardless of missing values, with n_taken characters per field.
@@ -70,14 +73,13 @@ class Format:
 		kwargs:
 			input_type: str, type of data input requested ('training' or 'test' or 'validation')
 			short: bool, if True then at most n_taken letters per feature is encoded
-			n_taken: int, number of letters taken per feature
 			remove_spaces: bool, if True then input feature spaces are removed before encoding
 
 		Returns:
 			array: string: str of values in the row of interest
 
 		"""
-		n = n_taken
+		n = n_taken = self.n_taken
 
 		if input_type == 'training':
 			inputs = self.training_inputs
@@ -144,10 +146,12 @@ class Format:
 
 		input_arr, output_arr = [], []
 		for i in range(len(string_arr)):
-			if outputs[self.prediction_feature][i]:
+			
+			if outputs[self.prediction_feature][i] != '':
 				string = string_arr[i]
 				input_arr.append(self.string_to_tensor(string, flatten))
 				output_arr.append(torch.tensor(outputs[self.prediction_feature][i]))
+
 		
 		return input_arr, output_arr
 

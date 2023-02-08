@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from network_interpret import CategoricalStaticInterpret as interpret
+from data_formatter import Format as GeneralFormat
 
 # turn 'value set on df slice copy' warnings off
 pd.options.mode.chained_assignment = None
@@ -73,11 +74,11 @@ class MultiLayerPerceptron(nn.Module):
 
 class Format():
 
-	def __init__(self, file, training=True, n_per_field=False):
+	def __init__(self, file, training=True, n_per_field=False, deliveries=False):
 
 		df = pd.read_csv(file)	
 		df = df.applymap(lambda x: '' if str(x).lower() == 'nan' else x)
-		df = df[:10000]
+		df = df[:100000]
 		length = len(df[:])
 		self.input_fields = ['PassengerId',
 							 'Pclass',
@@ -102,7 +103,7 @@ class Format():
 			# 80/20 training/test split
 			split_i = int(length * 0.8)
 
-			training = df[:]#[:split_i]
+			training = df[:][:split_i]
 			self.training_inputs = training[self.input_fields]
 			self.training_outputs = [i for i in training['Survived'][:]]
 
@@ -195,16 +196,12 @@ class Format():
 		"""
 
 		if ints_only:
-			places_dict = {s:int(s) for s in '0123456789'}
-			places_dict['.'] = 10
-			places_dict[' '] = 11
-			places_dict['-'] = 12
-			places_dict[':'] = 13
-			places_dict['_'] = 14
+			places_dict = {s:i for i, s in enumerate('0123456789. -:_')}
 
 		else:
 			chars = string.printable
 			places_dict = {s:i for i, s in enumerate(chars)}
+
 		self.embedding_dim = len(places_dict)
 		# vocab_size x batch_size x embedding dimension (ie input length)
 		tensor_shape = (len(input_string), 1, len(places_dict)) 
@@ -237,27 +234,42 @@ class Format():
 			input_tensors.append(input_tensor)
 
 			# convert output float to tensor directly
-			output_tensors.append(torch.Tensor([outputs[i]]))
+			output_tensors.append(torch.tensor([outputs[i]]))
 
 		return input_tensors, output_tensors
 
 
 class ActivateNet:
 
-	def __init__(self, epochs):
-		# n_letters = len('0123456789. -:_') # 15 possible characters
-		file = 'titanic/train.csv'
-		form = Format(file, training=True)
-		self.input_tensors, self.output_tensors = form.sequential_tensors(training=True)
-		self.validation_inputs, self.validation_outputs = form.sequential_tensors(training=False)
-		self.epochs = epochs
+	def __init__(self, epochs, deliveries=False):
 
+		if deliveries:
+			# specific dataset initialization and encoding
+			file = 'titanic/train.csv'
+			df = pd.read_csv(file)
+			input_tensors = Format(file, 'Survived')
+			self.input_tensors, self.output_tensors = input_tensors.sequential_tensors(training=True) 
+			self.validation_inputs, self.validation_outputs = input_tensors.sequential_tensors(training=False)
+			self.n_letters = input_tensors.embedding_dim
+
+		else:
+			# general dataset initialization and encoding
+			file = 'titanic/train.csv'
+			form = GeneralFormat(file, 'Survived', ints_only=False)
+			self.input_tensors, self.output_tensors = form.transform_to_tensors(training=True)
+			self.validation_inputs, self.validation_outputs = form.transform_to_tensors(training=False)
+			self.taken_ls = [form.n_taken for i in range(len(form.training_inputs.loc[0]))]
+			self.n_letters = len(form.places_dict)
+
+		print (len(self.input_tensors), len(self.validation_inputs))
+		self.epochs = epochs
 		output_size = 2
 		input_size = len(self.input_tensors[0])
 		self.model = MultiLayerPerceptron(input_size, output_size)
 		self.model.to(device)
 		self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
 		self.biases_arr = [[], []]
+
 
 	def weighted_mseloss(self, output, target):
 		"""
@@ -637,7 +649,7 @@ class ActivateNet:
 
 		return prediction_array
 
-epochs = 30
+epochs = 15
 
 network = ActivateNet(epochs)
 network.train_model()

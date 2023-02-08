@@ -21,8 +21,8 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import matplotlib
 
 # import custom libraries
-# from network_interpret import Interpret 
 from network_interpret import TransformerCatInterpret as interpret
+from data_formatter import Format as GeneralFormat
 
 # Turn 'value set on df slice copy' warnings off, but
 # note that care should be taken to match pandas dataframe
@@ -121,6 +121,7 @@ class Format():
 		df = pd.read_csv(file)	
 		df = df.applymap(lambda x: '' if str(x).lower() == 'nan' else x)
 		length = len(df[:])
+
 		self.input_fields = ['PassengerId','Pclass','Name','Sex','Age','SibSp','Parch','Ticket','Fare','Cabin','Embarked']
 
 		if training:
@@ -130,7 +131,7 @@ class Format():
 			# 80/20 training/test split
 			split_i = int(length * 0.8)
 
-			training = df[:]#[:split_i]
+			training = df[:][:split_i]
 			self.training_inputs = training[self.input_fields]
 			self.training_outputs = [i for i in training['Survived'][:]]
 
@@ -196,12 +197,7 @@ class Format():
 		"""
 
 		if ints_only:
-			places_dict = {s:int(s) for s in '0123456789'}
-			places_dict['.'] = 10
-			places_dict[' '] = 11
-			places_dict['-'] = 12
-			places_dict[':'] = 13
-			places_dict['_'] = 14
+			places_dict = {s:i for i, s in enumerate('0123456789. -:_')}
 
 		else:
 			chars = string.printable
@@ -255,33 +251,45 @@ class Format():
 			outputs = self.validation_outputs
 
 		for i in range(len(inputs)):
-			input_string = self.stringify_input(i, training=training)
+			input_string = self.stringify_input(i, training=training, n_per_field=True)
 			input_tensor = self.string_to_tensor(input_string)
 			input_tensors.append(input_tensor)
 
 			# convert output float to tensor directly
-			output_tensors.append(torch.Tensor([outputs[i]]))
+			output_tensors.append(torch.tensor([outputs[i]]))
 
 		return input_tensors, output_tensors
 
 
 class ActivateNetwork:
 
-	def __init__(self):
-		file = 'titanic/train.csv'
-		input_tensors = Format(file, 'Survived')
+	def __init__(self, deliveries=True):
 
-		self.train_inputs, self.train_outputs = input_tensors.sequential_tensors(training=True) 
-		self.test_inputs, self.test_outputs = input_tensors.sequential_tensors(training=False)
-		self.line_length = len(self.train_inputs[0])
-		self.n_letters = len(self.test_inputs[0][0][0])
+		if deliveries:
+			file = 'titanic/train.csv'
+			df = pd.read_csv(file)
+			input_tensors = Format(file, 'Survived')
+			self.train_inputs, self.train_outputs = input_tensors.sequential_tensors(training=True) 
+			self.test_inputs, self.test_outputs = input_tensors.sequential_tensors(training=False)
+			self.n_letters = len(self.train_inputs[0][0][0])
+
+		else:
+			# general dataset
+			file = '../spaceship_titanic_train.csv'
+			form = GeneralFormat(file, 'Transported', ints_only=False)
+			self.train_inputs, self.training_outputs = form.transform_to_tensors(training=True)
+			self.test_inputs, self.test_outputs = form.transform_to_tensors(training=False)
+			self.taken_ls = [form.n_taken for i in range(len(form.places_dict))]
+			self.n_letters = len(form.places_dict)
+
+		self.line_length = len(self.train_inputs[0]) # assumes equal number of characters per line
 		embedding_dim = self.n_letters
 		self.minibatch_size = 128
 		self.model = self.init_transformer(embedding_dim, self.minibatch_size, self.line_length)
 		self.model.to(device)
 		self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
 		self.loss_function = nn.CrossEntropyLoss()
-		self.epochs = 30
+		self.epochs = 15
 
 	def init_transformer(self, embedding_dim, minibatch_size, line_length):
 		"""
